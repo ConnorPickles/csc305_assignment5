@@ -1,0 +1,23 @@
+{
+    "cSpell.words": [
+        "cwise",
+        "Eigen",
+        "pgram",
+        "tmin",
+        "tymax",
+        "tymin",
+        "tzmax",
+        "tzmin",
+        "xmax",
+        "xmin",
+        "ymax",
+        "ymin",
+        "zmax",
+        "zmin"
+    ],
+    "files.associations": {
+        "alignedvector3": "cpp",
+        "cmath": "cpp",
+        "complex": "cpp"
+    }
+}
