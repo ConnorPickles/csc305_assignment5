@@ -52,4 +52,8 @@ public:
 class UniformAttributes
 {
 public:
+    Eigen::Matrix4f camera;
+    Eigen::Matrix4f projection;
+    Eigen::Matrix4f perspective;
+    Eigen::Matrix4f combined;
 };

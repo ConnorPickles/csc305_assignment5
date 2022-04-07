@@ -32,7 +32,7 @@ const Vector3d camera_top(0, 1, 0);
 
 //Object
 const std::string data_dir = DATA_DIR;
-const std::string mesh_filename(data_dir + "bumpy_cube.off");
+const std::string mesh_filename(data_dir + "bunny.off");
 MatrixXd vertices; // n x 3 matrix (n points)
 MatrixXi facets;   // m x 3 matrix (m triangles)
 
@@ -101,19 +101,59 @@ void build_uniform(UniformAttributes &uniform)
 {
     //TODO: setup uniform
 
-    //TODO: setup camera, compute w, u, v
+    //HACK: setup camera, compute w, u, v
+    Matrix4f camera(4, 4);
+    camera.setZero();
+    Vector3f e = camera_position.cast <float> ();
+    Vector3f g = camera_gaze.cast <float> ();
+    Vector3f top = camera_top.cast <float> ();
 
-    //TODO: compute the camera transformation
+    Vector3f w = -g.normalized();
+    Vector3f u = top.cross(w).normalized();
+    Vector3f v = w.cross(v);
 
-    //TODO: setup projection matrix
+    //NOTE: compute the camera transformation
+    camera.block(0, 0, 3, 1) = u;
+    camera.block(0, 1, 3, 1) = v;
+    camera.block(0, 2, 3, 1) = w;
+    camera.block(0, 3, 3, 1) = e;
+    camera(3, 3) = 1.0;
+    uniform.camera = camera.inverse();
 
-    Matrix4d P;
+    //NOTE: setup projection matrix
+    int image_y = near_plane * tan(field_of_view / 2);
+    int image_x = aspect_ratio * image_y;
+
+    double l = -image_x;
+    double b = -image_y;
+    double n = near_plane;
+
+    double r = image_x;
+    double t = image_y;
+    double f = far_plane;
+
+    Matrix4f projection;
+    projection.setZero();
+    projection(0, 0) = 2 / (r - l);
+    projection(1, 1) = 2 / (t - b);
+    projection(2, 2) = 2 / (n - f);
+    projection(3, 3) = 1;
+    projection(0, 3) = -(r + l) / (r - l);
+    projection(1, 3) = -(t + b) / (t - b);
+    projection(2, 3) = -(n + f) / (n - f);
+    uniform.projection = projection;
+
+    Matrix4f P;
     if (is_perspective)
     {
         //TODO setup prespective camera
+
+
+        uniform.combined = uniform.projection * uniform.perspective * uniform.camera;
     }
     else
     {
+        uniform.combined = uniform.projection * uniform.camera;
     }
 }
 
@@ -124,8 +164,10 @@ void simple_render(Eigen::Matrix<FrameBufferAttributes, Eigen::Dynamic, Eigen::D
     Program program;
 
     program.VertexShader = [](const VertexAttributes &va, const UniformAttributes &uniform) {
-        //TODO: fill the shader
-        return va;
+        //NOTE: fill the shader
+        VertexAttributes out;
+        out.position = uniform.combined * va.position;
+        return out;
     };
 
     program.FragmentShader = [](const VertexAttributes &va, const UniformAttributes &uniform) {
@@ -140,6 +182,16 @@ void simple_render(Eigen::Matrix<FrameBufferAttributes, Eigen::Dynamic, Eigen::D
 
     std::vector<VertexAttributes> vertex_attributes;
     //TODO: build the vertex attributes from vertices and facets
+    for (int i = 0; i < facets.rows(); i++)
+    {
+        Vector3d a = vertices.row(facets(i, 0));
+        Vector3d b = vertices.row(facets(i, 1));
+        Vector3d c = vertices.row(facets(i, 2));
+
+        vertex_attributes.push_back(VertexAttributes(a[0], a[1], a[2]));
+        vertex_attributes.push_back(VertexAttributes(b[0], b[1], b[2]));
+        vertex_attributes.push_back(VertexAttributes(c[0], c[1], c[2]));
+    }
 
     rasterize_triangles(program, uniform, vertex_attributes, frameBuffer);
 }
@@ -247,17 +299,17 @@ int main(int argc, char *argv[])
     framebuffer_to_uint8(frameBuffer, image);
     stbi_write_png("simple.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
 
-    wireframe_render(0, frameBuffer);
-    framebuffer_to_uint8(frameBuffer, image);
-    stbi_write_png("wireframe.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
+    // wireframe_render(0, frameBuffer);
+    // framebuffer_to_uint8(frameBuffer, image);
+    // stbi_write_png("wireframe.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
 
-    flat_shading(0, frameBuffer);
-    framebuffer_to_uint8(frameBuffer, image);
-    stbi_write_png("flat_shading.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
+    // flat_shading(0, frameBuffer);
+    // framebuffer_to_uint8(frameBuffer, image);
+    // stbi_write_png("flat_shading.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
 
-    pv_shading(0, frameBuffer);
-    framebuffer_to_uint8(frameBuffer, image);
-    stbi_write_png("pv_shading.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
+    // pv_shading(0, frameBuffer);
+    // framebuffer_to_uint8(frameBuffer, image);
+    // stbi_write_png("pv_shading.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
 
     //TODO: add the animation
 
