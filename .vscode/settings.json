@@ -3,6 +3,8 @@
         "cwise",
         "Eigen",
         "pgram",
+        "rasterize",
+        "stbi",
         "tmin",
         "tymax",
         "tymin",

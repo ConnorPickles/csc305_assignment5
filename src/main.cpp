@@ -109,8 +109,8 @@ void build_uniform(UniformAttributes &uniform)
     Vector3f top = camera_top.cast <float> ();
 
     Vector3f w = -g.normalized();
-    Vector3f u = top.cross(w).normalized();
-    Vector3f v = w.cross(v);
+    Vector3f u = (top.cross(w)).normalized();
+    Vector3f v = w.cross(u);
 
     //NOTE: compute the camera transformation
     camera.block(0, 0, 3, 1) = u;
@@ -120,17 +120,26 @@ void build_uniform(UniformAttributes &uniform)
     camera(3, 3) = 1.0;
     uniform.camera = camera.inverse();
 
-    //NOTE: setup projection matrix
-    int image_y = near_plane * tan(field_of_view / 2);
-    int image_x = aspect_ratio * image_y;
+    // NOTE: setup projection matrix
+    float image_y = near_plane * tan(field_of_view / 2);
+    float image_x = aspect_ratio * image_y;
 
-    double l = -image_x;
-    double b = -image_y;
-    double n = near_plane;
+    float l = -image_x;
+    float b = -image_y;
+    float n = -near_plane;
 
-    double r = image_x;
-    double t = image_y;
-    double f = far_plane;
+    float r = image_x;
+    float t = image_y;
+    float f = -far_plane;
+
+    // //NOTE: setup projection matrix
+    // float n = near_plane;
+    // float b = near_plane * tan(field_of_view);
+    // float l = aspect_ratio * b;
+
+    // float f = far_plane;
+    // float t = far_plane * tan(field_of_view);
+    // float r = aspect_ratio * t;
 
     Matrix4f projection;
     projection.setZero();
@@ -146,7 +155,7 @@ void build_uniform(UniformAttributes &uniform)
     Matrix4f P;
     if (is_perspective)
     {
-        //TODO setup prespective camera
+        //TODO setup perspective camera
 
 
         uniform.combined = uniform.projection * uniform.perspective * uniform.camera;
@@ -171,17 +180,17 @@ void simple_render(Eigen::Matrix<FrameBufferAttributes, Eigen::Dynamic, Eigen::D
     };
 
     program.FragmentShader = [](const VertexAttributes &va, const UniformAttributes &uniform) {
-        //TODO: fill the shader
+        //NOTE: fill the shader
         return FragmentAttributes(1, 0, 0);
     };
 
     program.BlendingShader = [](const FragmentAttributes &fa, const FrameBufferAttributes &previous) {
-        //TODO: fill the shader
+        //NOTE: fill the shader
         return FrameBufferAttributes(fa.color[0] * 255, fa.color[1] * 255, fa.color[2] * 255, fa.color[3] * 255);
     };
 
     std::vector<VertexAttributes> vertex_attributes;
-    //TODO: build the vertex attributes from vertices and facets
+    //NOTE: build the vertex attributes from vertices and facets
     for (int i = 0; i < facets.rows(); i++)
     {
         Vector3d a = vertices.row(facets(i, 0));
@@ -213,24 +222,39 @@ void wireframe_render(const double alpha, Eigen::Matrix<FrameBufferAttributes, E
     Matrix4d trafo = compute_rotation(alpha);
 
     program.VertexShader = [](const VertexAttributes &va, const UniformAttributes &uniform) {
-        //TODO: fill the shader
-        return va;
+        // NOTE: fill the shader
+        VertexAttributes out;
+        out.position = uniform.combined * va.position;
+        return out;
     };
 
     program.FragmentShader = [](const VertexAttributes &va, const UniformAttributes &uniform) {
-        //TODO: fill the shader
+        //NOTE: fill the shader
         return FragmentAttributes(1, 0, 0);
     };
 
     program.BlendingShader = [](const FragmentAttributes &fa, const FrameBufferAttributes &previous) {
-        //TODO: fill the shader
+        //NOTE: fill the shader
         return FrameBufferAttributes(fa.color[0] * 255, fa.color[1] * 255, fa.color[2] * 255, fa.color[3] * 255);
     };
 
     std::vector<VertexAttributes> vertex_attributes;
 
-    //TODO: generate the vertex attributes for the edges and rasterize the lines
-    //TODO: use the transformation matrix
+    //NOTE: generate the vertex attributes for the edges and rasterize the lines
+    //NOTE: use the transformation matrix
+    for (int i = 0; i < facets.rows(); i++)
+    {
+        Vector3d a = vertices.row(facets(i, 0));
+        Vector3d b = vertices.row(facets(i, 1));
+        Vector3d c = vertices.row(facets(i, 2));
+
+        vertex_attributes.push_back(VertexAttributes(a[0], a[1], a[2]));
+        vertex_attributes.push_back(VertexAttributes(b[0], b[1], b[2]));
+        vertex_attributes.push_back(VertexAttributes(b[0], b[1], b[2]));
+        vertex_attributes.push_back(VertexAttributes(c[0], c[1], c[2]));
+        vertex_attributes.push_back(VertexAttributes(c[0], c[1], c[2]));
+        vertex_attributes.push_back(VertexAttributes(a[0], a[1], a[2]));
+    }
 
     rasterize_lines(program, uniform, vertex_attributes, 0.5, frameBuffer);
 }
@@ -238,9 +262,11 @@ void wireframe_render(const double alpha, Eigen::Matrix<FrameBufferAttributes, E
 void get_shading_program(Program &program)
 {
     program.VertexShader = [](const VertexAttributes &va, const UniformAttributes &uniform) {
-        //TODO: transform the position and the normal
+        //HACK: transform the position and the normal
+        VertexAttributes out;
+        out.position = uniform.combined * va.position;
         //TODO: compute the correct lighting
-        return va;
+        return out;
     };
 
     program.FragmentShader = [](const VertexAttributes &va, const UniformAttributes &uniform) {
@@ -295,18 +321,21 @@ int main(int argc, char *argv[])
     Eigen::Matrix<FrameBufferAttributes, Eigen::Dynamic, Eigen::Dynamic> frameBuffer(W, H);
     vector<uint8_t> image;
 
-    simple_render(frameBuffer);
-    framebuffer_to_uint8(frameBuffer, image);
-    stbi_write_png("simple.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
+    // simple_render(frameBuffer);
+    // framebuffer_to_uint8(frameBuffer, image);
+    // stbi_write_png("simple.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
 
+    // frameBuffer = Eigen::Matrix<FrameBufferAttributes, Eigen::Dynamic, Eigen::Dynamic> (W, H);
     // wireframe_render(0, frameBuffer);
     // framebuffer_to_uint8(frameBuffer, image);
     // stbi_write_png("wireframe.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
 
-    // flat_shading(0, frameBuffer);
-    // framebuffer_to_uint8(frameBuffer, image);
-    // stbi_write_png("flat_shading.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
+    frameBuffer = Eigen::Matrix<FrameBufferAttributes, Eigen::Dynamic, Eigen::Dynamic> (W, H);
+    flat_shading(0, frameBuffer);
+    framebuffer_to_uint8(frameBuffer, image);
+    stbi_write_png("flat_shading.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
 
+    // frameBuffer = Eigen::Matrix<FrameBufferAttributes, Eigen::Dynamic, Eigen::Dynamic> (W, H);
     // pv_shading(0, frameBuffer);
     // framebuffer_to_uint8(frameBuffer, image);
     // stbi_write_png("pv_shading.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
