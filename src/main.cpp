@@ -132,15 +132,6 @@ void build_uniform(UniformAttributes &uniform)
     float t = image_y;
     float f = -far_plane;
 
-    // //NOTE: setup projection matrix
-    // float n = near_plane;
-    // float b = near_plane * tan(field_of_view);
-    // float l = aspect_ratio * b;
-
-    // float f = far_plane;
-    // float t = far_plane * tan(field_of_view);
-    // float r = aspect_ratio * t;
-
     Matrix4f projection;
     projection.setZero();
     projection(0, 0) = 2 / (r - l);
@@ -265,18 +256,50 @@ void get_shading_program(Program &program)
         //HACK: transform the position and the normal
         VertexAttributes out;
         out.position = uniform.combined * va.position;
-        //TODO: compute the correct lighting
+        out.normal = va.normal;
         return out;
     };
 
     program.FragmentShader = [](const VertexAttributes &va, const UniformAttributes &uniform) {
-        //TODO: create the correct fragment
-        return FragmentAttributes(1, 0, 0);
+        //NOTE: compute the correct lighting
+        const Vector3d pos = Vector3d(va.position[0], va.position[1], va.position[2]);
+        Vector3d v = (camera_position - pos).normalized();
+
+        Vector3d lights_color(0, 0, 0);
+        for (int i = 0; i < light_positions.size(); i++)
+        {
+            const Vector3d &light_position = light_positions[i];
+            const Vector3d &light_color = light_colors[i];
+
+            const Vector3d pos = Vector3d(va.position[0], va.position[1], va.position[2]);
+            const Vector3d Li = (light_position - pos).normalized();
+            
+            // Diffuse contribution
+            const Vector3d diffuse = obj_diffuse_color * std::max(Li.dot(va.normal), 0.0);
+
+            // Specular contribution, use obj_specular_color
+            Vector3d h = (v + Li).normalized();
+            const Vector3d specular = obj_specular_color * std::pow(std::max(h.dot(va.normal), 0.0), obj_specular_exponent);
+
+            // Attenuate lights according to the squared distance to the lights
+            const Vector3d D = light_position - pos;
+            lights_color += (diffuse + specular).cwiseProduct(light_color) / D.squaredNorm();
+        }
+
+        lights_color += ambient_light;
+        return FragmentAttributes(lights_color[0], lights_color[1], lights_color[2], 1, va.position[2]);
     };
 
     program.BlendingShader = [](const FragmentAttributes &fa, const FrameBufferAttributes &previous) {
-        //TODO: implement the depth check
-        return FrameBufferAttributes(fa.color[0] * 255, fa.color[1] * 255, fa.color[2] * 255, fa.color[3] * 255);
+        //NOTE: implement the depth check
+        if (fa.depth > previous.depth)
+        {
+            return FrameBufferAttributes(fa.color[0] * 255, fa.color[1] * 255, fa.color[2] * 255, fa.color[3] * 255, fa.depth);
+        }
+        else
+        {
+            return previous;
+        }
     };
 }
 
@@ -289,8 +312,21 @@ void flat_shading(const double alpha, Eigen::Matrix<FrameBufferAttributes, Eigen
     Eigen::Matrix4d trafo = compute_rotation(alpha);
 
     std::vector<VertexAttributes> vertex_attributes;
-    //TODO: compute the normals
-    //TODO: set material colors
+    //NOTE: compute the normals
+    for (int i = 0; i < facets.rows(); i++)
+    {
+        Vector3d a = vertices.row(facets(i, 0));
+        Vector3d b = vertices.row(facets(i, 1));
+        Vector3d c = vertices.row(facets(i, 2));
+
+        Vector3d normal = ((b - a).cross(c - a)).normalized();
+
+        vertex_attributes.push_back(VertexAttributes(a[0], a[1], a[2], 1, normal));
+        vertex_attributes.push_back(VertexAttributes(b[0], b[1], b[2], 1, normal));
+        vertex_attributes.push_back(VertexAttributes(c[0], c[1], c[2], 1, normal));
+    }
+
+    //NOTE: set material colors
 
     rasterize_triangles(program, uniform, vertex_attributes, frameBuffer);
 }
@@ -304,11 +340,43 @@ void pv_shading(const double alpha, Eigen::Matrix<FrameBufferAttributes, Eigen::
 
     Eigen::Matrix4d trafo = compute_rotation(alpha);
 
-    //TODO: compute the vertex normals as vertex normal average
+    //NOTE: compute the vertex normals as vertex normal average
+    std::vector<Vector3d> face_normals;
+    std::vector<Vector3d> vertex_normals(vertices.size());
+    for (int i = 0; i < facets.rows(); i++)
+    {
+        Vector3d a = vertices.row(facets(i, 0));
+        Vector3d b = vertices.row(facets(i, 1));
+        Vector3d c = vertices.row(facets(i, 2));
+
+        Vector3d normal = ((b - a).cross(c - a)).normalized();
+
+        face_normals.push_back(normal);
+
+        vertex_normals[facets(i, 0)] += normal;
+        vertex_normals[facets(i, 1)] += normal;
+        vertex_normals[facets(i, 2)] += normal;
+    }
+
+    for (int i = 0; i < vertex_normals.size(); i++)
+    {
+        vertex_normals[i] = vertex_normals[i].normalized();
+    }
 
     std::vector<VertexAttributes> vertex_attributes;
-    //TODO: create vertex attributes
-    //TODO: set material colors
+    //NOTE: create vertex attributes
+    //NOTE: set material colors
+
+    for (int i = 0; i < facets.rows(); i++)
+    {
+        Vector3d a = vertices.row(facets(i, 0));
+        Vector3d b = vertices.row(facets(i, 1));
+        Vector3d c = vertices.row(facets(i, 2));
+
+        vertex_attributes.push_back(VertexAttributes(a[0], a[1], a[2], 1, vertex_normals[facets(i, 0)]));
+        vertex_attributes.push_back(VertexAttributes(b[0], b[1], b[2], 1, vertex_normals[facets(i, 1)]));
+        vertex_attributes.push_back(VertexAttributes(c[0], c[1], c[2], 1, vertex_normals[facets(i, 2)]));
+    }
 
     rasterize_triangles(program, uniform, vertex_attributes, frameBuffer);
 }
@@ -326,19 +394,18 @@ int main(int argc, char *argv[])
     // stbi_write_png("simple.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
 
     // frameBuffer = Eigen::Matrix<FrameBufferAttributes, Eigen::Dynamic, Eigen::Dynamic> (W, H);
+
     // wireframe_render(0, frameBuffer);
     // framebuffer_to_uint8(frameBuffer, image);
     // stbi_write_png("wireframe.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
 
-    frameBuffer = Eigen::Matrix<FrameBufferAttributes, Eigen::Dynamic, Eigen::Dynamic> (W, H);
-    flat_shading(0, frameBuffer);
-    framebuffer_to_uint8(frameBuffer, image);
-    stbi_write_png("flat_shading.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
-
-    // frameBuffer = Eigen::Matrix<FrameBufferAttributes, Eigen::Dynamic, Eigen::Dynamic> (W, H);
-    // pv_shading(0, frameBuffer);
+    // flat_shading(0, frameBuffer);
     // framebuffer_to_uint8(frameBuffer, image);
-    // stbi_write_png("pv_shading.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
+    // stbi_write_png("flat_shading.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
+
+    pv_shading(0, frameBuffer);
+    framebuffer_to_uint8(frameBuffer, image);
+    stbi_write_png("pv_shading.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
 
     //TODO: add the animation
 
