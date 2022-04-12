@@ -99,9 +99,9 @@ void setup_scene()
 
 void build_uniform(UniformAttributes &uniform)
 {
-    //TODO: setup uniform
+    //NOTE: setup uniform
 
-    //HACK: setup camera, compute w, u, v
+    //NOTE: setup camera, compute w, u, v
     Matrix4f camera(4, 4);
     camera.setZero();
     Vector3f e = camera_position.cast <float> ();
@@ -196,10 +196,49 @@ void simple_render(Eigen::Matrix<FrameBufferAttributes, Eigen::Dynamic, Eigen::D
     rasterize_triangles(program, uniform, vertex_attributes, frameBuffer);
 }
 
-Matrix4d compute_rotation(const double alpha)
+Matrix4f compute_rotation(const double alpha)
 {
-    //TODO: Compute the rotation matrix of angle alpha on the y axis around the object barycenter
-    Matrix4d res;
+    //NOTE: Compute the rotation matrix of angle alpha on the y axis around the object barycenter
+    Matrix4f res;
+
+    // find barycenter by taking average of all triangle barycenters
+    Vector3f center(0, 0, 0);
+    for (int i = 0; i < facets.rows(); i++)
+    {
+        Vector3f a = vertices.row(facets(i, 0)).cast <float> ();
+        Vector3f b = vertices.row(facets(i, 1)).cast <float> ();
+        Vector3f c = vertices.row(facets(i, 2)).cast <float> ();
+        center += (a + b + c) / 3;
+    }
+    center /= facets.rows();
+
+    Matrix4f translate_to_origin;
+    translate_to_origin.setZero();
+    translate_to_origin(0, 0) = 1;
+    translate_to_origin(1, 1) = 1;
+    translate_to_origin(2, 2) = 1;
+    translate_to_origin(3, 3) = 1;
+    translate_to_origin.block(0, 3, 3, 1) = -center;
+
+    Matrix4f rotation;
+    double angle = alpha * 2 * 3.1415;
+    rotation.setZero();
+    rotation(0, 0) = cos(angle);
+    rotation(0, 2) = -sin(angle);
+    rotation(2, 0) = sin(angle);
+    rotation(2, 2) = cos(angle);
+    rotation(1, 1) = 1;
+    rotation(3, 3) = 1;
+
+    Matrix4f translate_from_origin;
+    translate_from_origin.setZero();
+    translate_from_origin(0, 0) = 1;
+    translate_from_origin(1, 1) = 1;
+    translate_from_origin(2, 2) = 1;
+    translate_from_origin(3, 3) = 1;
+    translate_from_origin.block(0, 3, 3, 1) = center;
+
+    res = translate_from_origin * rotation * translate_to_origin;
 
     return res;
 }
@@ -210,12 +249,12 @@ void wireframe_render(const double alpha, Eigen::Matrix<FrameBufferAttributes, E
     build_uniform(uniform);
     Program program;
 
-    Matrix4d trafo = compute_rotation(alpha);
+    uniform.rotation = compute_rotation(alpha);
 
     program.VertexShader = [](const VertexAttributes &va, const UniformAttributes &uniform) {
         // NOTE: fill the shader
         VertexAttributes out;
-        out.position = uniform.combined * va.position;
+        out.position = uniform.combined * uniform.rotation * va.position;
         return out;
     };
 
@@ -255,7 +294,7 @@ void get_shading_program(Program &program)
     program.VertexShader = [](const VertexAttributes &va, const UniformAttributes &uniform) {
         //HACK: transform the position and the normal
         VertexAttributes out;
-        out.position = uniform.combined * va.position;
+        out.position = uniform.combined * uniform.rotation * va.position;
         out.normal = va.normal;
         return out;
     };
@@ -307,9 +346,9 @@ void flat_shading(const double alpha, Eigen::Matrix<FrameBufferAttributes, Eigen
 {
     UniformAttributes uniform;
     build_uniform(uniform);
+    uniform.rotation = compute_rotation(alpha);
     Program program;
     get_shading_program(program);
-    Eigen::Matrix4d trafo = compute_rotation(alpha);
 
     std::vector<VertexAttributes> vertex_attributes;
     //NOTE: compute the normals
@@ -319,7 +358,19 @@ void flat_shading(const double alpha, Eigen::Matrix<FrameBufferAttributes, Eigen
         Vector3d b = vertices.row(facets(i, 1));
         Vector3d c = vertices.row(facets(i, 2));
 
-        Vector3d normal = ((b - a).cross(c - a)).normalized();
+        Vector4f a4d(a[0], a[1], a[2], 1);
+        Vector4f b4d(b[0], b[1], b[2], 1);
+        Vector4f c4d(c[0], c[1], c[2], 1);
+
+        a4d = uniform.rotation * a4d;
+        b4d = uniform.rotation * b4d;
+        c4d = uniform.rotation * c4d;
+
+        Vector3d a_rot(a4d[0], a4d[1], a4d[2]);
+        Vector3d b_rot(b4d[0], b4d[1], b4d[2]);
+        Vector3d c_rot(c4d[0], c4d[1], c4d[2]);
+
+        Vector3d normal = ((b_rot - a_rot).cross(c_rot - a_rot)).normalized();
 
         vertex_attributes.push_back(VertexAttributes(a[0], a[1], a[2], 1, normal));
         vertex_attributes.push_back(VertexAttributes(b[0], b[1], b[2], 1, normal));
@@ -335,10 +386,10 @@ void pv_shading(const double alpha, Eigen::Matrix<FrameBufferAttributes, Eigen::
 {
     UniformAttributes uniform;
     build_uniform(uniform);
+    uniform.rotation = compute_rotation(alpha);
     Program program;
     get_shading_program(program);
 
-    Eigen::Matrix4d trafo = compute_rotation(alpha);
 
     //NOTE: compute the vertex normals as vertex normal average
     std::vector<Vector3d> face_normals;
@@ -349,7 +400,19 @@ void pv_shading(const double alpha, Eigen::Matrix<FrameBufferAttributes, Eigen::
         Vector3d b = vertices.row(facets(i, 1));
         Vector3d c = vertices.row(facets(i, 2));
 
-        Vector3d normal = ((b - a).cross(c - a)).normalized();
+        Vector4f a4d(a[0], a[1], a[2], 1);
+        Vector4f b4d(b[0], b[1], b[2], 1);
+        Vector4f c4d(c[0], c[1], c[2], 1);
+
+        a4d = uniform.rotation * a4d;
+        b4d = uniform.rotation * b4d;
+        c4d = uniform.rotation * c4d;
+
+        Vector3d a_rot(a4d[0], a4d[1], a4d[2]);
+        Vector3d b_rot(b4d[0], b4d[1], b4d[2]);
+        Vector3d c_rot(c4d[0], c4d[1], c4d[2]);
+
+        Vector3d normal = ((b_rot - a_rot).cross(c_rot - a_rot)).normalized();
 
         face_normals.push_back(normal);
 
@@ -389,25 +452,64 @@ int main(int argc, char *argv[])
     Eigen::Matrix<FrameBufferAttributes, Eigen::Dynamic, Eigen::Dynamic> frameBuffer(W, H);
     vector<uint8_t> image;
 
-    // simple_render(frameBuffer);
-    // framebuffer_to_uint8(frameBuffer, image);
-    // stbi_write_png("simple.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
+    simple_render(frameBuffer);
+    framebuffer_to_uint8(frameBuffer, image);
+    stbi_write_png("simple.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
 
-    // frameBuffer = Eigen::Matrix<FrameBufferAttributes, Eigen::Dynamic, Eigen::Dynamic> (W, H);
+    frameBuffer = Eigen::Matrix<FrameBufferAttributes, Eigen::Dynamic, Eigen::Dynamic> (W, H);
+    wireframe_render(0, frameBuffer);
+    framebuffer_to_uint8(frameBuffer, image);
+    stbi_write_png("wireframe.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
 
-    // wireframe_render(0, frameBuffer);
-    // framebuffer_to_uint8(frameBuffer, image);
-    // stbi_write_png("wireframe.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
+    frameBuffer = Eigen::Matrix<FrameBufferAttributes, Eigen::Dynamic, Eigen::Dynamic> (W, H);
+    flat_shading(0, frameBuffer);
+    framebuffer_to_uint8(frameBuffer, image);
+    stbi_write_png("flat_shading.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
 
-    // flat_shading(0, frameBuffer);
-    // framebuffer_to_uint8(frameBuffer, image);
-    // stbi_write_png("flat_shading.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
-
+    frameBuffer = Eigen::Matrix<FrameBufferAttributes, Eigen::Dynamic, Eigen::Dynamic> (W, H);
     pv_shading(0, frameBuffer);
     framebuffer_to_uint8(frameBuffer, image);
     stbi_write_png("pv_shading.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
 
     //TODO: add the animation
+    int delay = 25;
+    GifWriter g;
+
+    frameBuffer = Eigen::Matrix<FrameBufferAttributes, Eigen::Dynamic, Eigen::Dynamic> (W, H);
+    const char* wireframe_file = "wireframe.gif";
+    GifBegin(&g, wireframe_file, frameBuffer.rows(), frameBuffer.cols(), delay);
+    for (float i = 1; i > 0; i -= 0.05)
+    {
+        frameBuffer.setConstant(FrameBufferAttributes());
+        wireframe_render(i, frameBuffer);
+        framebuffer_to_uint8(frameBuffer, image);
+        GifWriteFrame(&g, image.data(), frameBuffer.rows(), frameBuffer.cols(), delay);
+    }
+    GifEnd(&g);
+    
+    frameBuffer = Eigen::Matrix<FrameBufferAttributes, Eigen::Dynamic, Eigen::Dynamic> (W, H);
+    const char* flat_file = "flat_shading.gif";
+    GifBegin(&g, flat_file, frameBuffer.rows(), frameBuffer.cols(), delay);
+    for (float i = 1; i > 0; i -= 0.05)
+    {
+        frameBuffer.setConstant(FrameBufferAttributes());
+        flat_shading(i, frameBuffer);
+        framebuffer_to_uint8(frameBuffer, image);
+        GifWriteFrame(&g, image.data(), frameBuffer.rows(), frameBuffer.cols(), delay);
+    }
+    GifEnd(&g);
+
+    frameBuffer = Eigen::Matrix<FrameBufferAttributes, Eigen::Dynamic, Eigen::Dynamic> (W, H);
+    const char* pv_file = "pv_shading.gif";
+    GifBegin(&g, pv_file, frameBuffer.rows(), frameBuffer.cols(), delay);
+    for (float i = 1; i > 0; i -= 0.05)
+    {
+        frameBuffer.setConstant(FrameBufferAttributes());
+        pv_shading(i, frameBuffer);
+        framebuffer_to_uint8(frameBuffer, image);
+        GifWriteFrame(&g, image.data(), frameBuffer.rows(), frameBuffer.cols(), delay);
+    }
+    GifEnd(&g);
 
     return 0;
 }

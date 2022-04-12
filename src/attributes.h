@@ -63,4 +63,5 @@ public:
     Eigen::Matrix4f projection;
     Eigen::Matrix4f perspective;
     Eigen::Matrix4f combined;
+    Eigen::Matrix4f rotation;
 };
