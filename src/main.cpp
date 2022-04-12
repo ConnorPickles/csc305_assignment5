@@ -25,7 +25,7 @@ const double near_plane = 1.5; //AKA focal length
 const double far_plane = near_plane * 100;
 const double field_of_view = 0.7854; //45 degrees
 const double aspect_ratio = 1.5;
-const bool is_perspective = false;
+const bool is_perspective = true;
 const Vector3d camera_position(0, 0, 3);
 const Vector3d camera_gaze(0, 0, -1);
 const Vector3d camera_top(0, 1, 0);
@@ -146,8 +146,15 @@ void build_uniform(UniformAttributes &uniform)
     Matrix4f P;
     if (is_perspective)
     {
-        //TODO setup perspective camera
-
+        //NOTE setup perspective camera
+        Matrix4f perspective;
+        perspective.setZero();
+        perspective(0, 0) = n;
+        perspective(1, 1) = n;
+        perspective(2, 2) = n + f;
+        perspective(2, 3) = - f * n;
+        perspective(3, 2) = 1;
+        uniform.perspective = perspective;
 
         uniform.combined = uniform.projection * uniform.perspective * uniform.camera;
     }
@@ -172,12 +179,11 @@ void simple_render(Eigen::Matrix<FrameBufferAttributes, Eigen::Dynamic, Eigen::D
 
     program.FragmentShader = [](const VertexAttributes &va, const UniformAttributes &uniform) {
         //NOTE: fill the shader
-        return FragmentAttributes(1, 0, 0);
+        return FragmentAttributes(1, 0, 0, 1, va.position[2]);
     };
 
     program.BlendingShader = [](const FragmentAttributes &fa, const FrameBufferAttributes &previous) {
-        //NOTE: fill the shader
-        return FrameBufferAttributes(fa.color[0] * 255, fa.color[1] * 255, fa.color[2] * 255, fa.color[3] * 255);
+        return FrameBufferAttributes(fa.color[0] * 255, fa.color[1] * 255, fa.color[2] * 255, fa.color[3] * 255, fa.depth);
     };
 
     std::vector<VertexAttributes> vertex_attributes;
@@ -260,12 +266,11 @@ void wireframe_render(const double alpha, Eigen::Matrix<FrameBufferAttributes, E
 
     program.FragmentShader = [](const VertexAttributes &va, const UniformAttributes &uniform) {
         //NOTE: fill the shader
-        return FragmentAttributes(1, 0, 0);
+        return FragmentAttributes(1, 0, 0, 1, va.position[2]);
     };
 
     program.BlendingShader = [](const FragmentAttributes &fa, const FrameBufferAttributes &previous) {
-        //NOTE: fill the shader
-        return FrameBufferAttributes(fa.color[0] * 255, fa.color[1] * 255, fa.color[2] * 255, fa.color[3] * 255);
+        return FrameBufferAttributes(fa.color[0] * 255, fa.color[1] * 255, fa.color[2] * 255, fa.color[3] * 255, fa.depth);
     };
 
     std::vector<VertexAttributes> vertex_attributes;
@@ -295,13 +300,15 @@ void get_shading_program(Program &program)
         //HACK: transform the position and the normal
         VertexAttributes out;
         out.position = uniform.combined * uniform.rotation * va.position;
+        out.orig_pos = va.orig_pos;
         out.normal = va.normal;
         return out;
     };
 
     program.FragmentShader = [](const VertexAttributes &va, const UniformAttributes &uniform) {
         //NOTE: compute the correct lighting
-        const Vector3d pos = Vector3d(va.position[0], va.position[1], va.position[2]);
+        Vector4f rot_pos = uniform.rotation * va.orig_pos;
+        const Vector3d pos = Vector3d(rot_pos[0], rot_pos[1], rot_pos[2]);
         Vector3d v = (camera_position - pos).normalized();
 
         Vector3d lights_color(0, 0, 0);
@@ -310,7 +317,6 @@ void get_shading_program(Program &program)
             const Vector3d &light_position = light_positions[i];
             const Vector3d &light_color = light_colors[i];
 
-            const Vector3d pos = Vector3d(va.position[0], va.position[1], va.position[2]);
             const Vector3d Li = (light_position - pos).normalized();
             
             // Diffuse contribution
@@ -331,13 +337,30 @@ void get_shading_program(Program &program)
 
     program.BlendingShader = [](const FragmentAttributes &fa, const FrameBufferAttributes &previous) {
         //NOTE: implement the depth check
-        if (fa.depth > previous.depth)
+        if (!is_perspective)
         {
-            return FrameBufferAttributes(fa.color[0] * 255, fa.color[1] * 255, fa.color[2] * 255, fa.color[3] * 255, fa.depth);
+            if (fa.depth > previous.depth || previous.depth == 8675309)
+            {
+                return FrameBufferAttributes(fa.color[0] * 255, fa.color[1] * 255, fa.color[2] * 255, fa.color[3] * 255, fa.depth);
+            }
+            else
+            {
+                return previous;
+            }
         }
         else
         {
-            return previous;
+            // I have no idea why this is the opposite from orthogonal. but it works, and I don't care to spend another
+            // few hours trying to figure out WHY it works. If you happen to know the reason, please feel free to explain
+            // it in the assignment feedback.
+            if (fa.depth < previous.depth || previous.depth == 8675309)
+            {
+                return FrameBufferAttributes(fa.color[0] * 255, fa.color[1] * 255, fa.color[2] * 255, fa.color[3] * 255, fa.depth);
+            }
+            else
+            {
+                return previous;
+            }
         }
     };
 }
@@ -471,7 +494,7 @@ int main(int argc, char *argv[])
     framebuffer_to_uint8(frameBuffer, image);
     stbi_write_png("pv_shading.png", frameBuffer.rows(), frameBuffer.cols(), 4, image.data(), frameBuffer.rows() * 4);
 
-    //TODO: add the animation
+    //NOTE: add the animation
     int delay = 25;
     GifWriter g;
 

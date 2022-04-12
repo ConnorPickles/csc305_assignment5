@@ -8,6 +8,7 @@ public:
     VertexAttributes(float x = 0, float y = 0, float z = 0, float w = 1, Eigen::Vector3d n = Eigen::Vector3d(0, 0, 0))
     {
         position << x, y, z, w;
+        orig_pos << x, y, z, w;
         normal << n;
     }
 
@@ -23,17 +24,19 @@ public:
         VertexAttributes r;
         r.position = alpha * a.position + beta * b.position + gamma * c.position;
         r.normal = (alpha * a.normal + beta * b.normal + gamma * c.normal).normalized();
+        r.orig_pos = r.position;
         return r;
     }
 
     Eigen::Vector4f position;
+    Eigen::Vector4f orig_pos;
     Eigen::Vector3d normal;
 };
 
 class FragmentAttributes
 {
 public:
-    FragmentAttributes(float r = 0, float g = 0, float b = 0, float a = 1, float d = std::numeric_limits<float>::min())
+    FragmentAttributes(float r = 0, float g = 0, float b = 0, float a = 1, float d = 8675309)
     {
         color << r, g, b, a;
         depth = d;
@@ -46,7 +49,7 @@ public:
 class FrameBufferAttributes
 {
 public:
-    FrameBufferAttributes(uint8_t r = 0, uint8_t g = 0, uint8_t b = 0, uint8_t a = 255, float d = std::numeric_limits<float>::min())
+    FrameBufferAttributes(uint8_t r = 0, uint8_t g = 0, uint8_t b = 0, uint8_t a = 255, float d = 8675309)
     {
         color << r, g, b, a;
         depth = d;
